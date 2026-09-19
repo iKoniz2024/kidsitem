@@ -1,14 +1,19 @@
 const { MongoClient, ServerApiVersion } = require("mongodb");
-const dns = require('dns');
 const { setupIndexes } = require("../utils/setupIndexes");
 const { warmUpCache } = require("../utils/cache");
 
-dns.setServers(['8.8.8.8', '8.8.4.4']);
+if (!process.env.VERCEL) {
+    try {
+        const dns = require('dns');
+        dns.setServers(['8.8.8.8', '8.8.4.4']);
+    } catch (e) {
+        // Ignore DNS resolver override in restricted runtimes
+    }
+}
 
 const dbUser = encodeURIComponent(process.env.DB_USER || "");
 const dbPass = encodeURIComponent(process.env.DB_PASS || "");
 
-// Using standard MongoDB URI to bypass DNS SRV blocking issues or environment variable
 const uri = process.env.MONGODB_URI || `mongodb://${dbUser}:${dbPass}@cluster0-shard-00-00.bb41v.mongodb.net:27017,cluster0-shard-00-01.bb41v.mongodb.net:27017,cluster0-shard-00-02.bb41v.mongodb.net:27017/?authSource=admin&replicaSet=atlas-imfz1t-shard-0&tls=true`;
 
 const client = new MongoClient(uri, {
@@ -20,6 +25,7 @@ const client = new MongoClient(uri, {
 });
 
 let db;
+let isInitialized = false;
 
 async function connectDB() {
     if (db) return db;
@@ -28,11 +34,11 @@ async function connectDB() {
 
     console.log("MongoDB Connected");
 
-    // Setup Indexes
-    await setupIndexes(db);
-
-    // Warm up cache in background on startup
-    warmUpCache(db).catch(err => console.error("Startup warmup failed:", err));
+    if (!isInitialized) {
+        isInitialized = true;
+        setupIndexes(db).catch(err => console.error("Setup indexes error:", err));
+        warmUpCache(db).catch(err => console.error("Startup warmup error:", err));
+    }
 
     return db;
 }
